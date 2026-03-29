@@ -1,0 +1,7 @@
+# example config file
+outputDir: ./.codex/skills
+targets:
+  - url: https://github.com/rchaser53/skills-playground/tree/main/publish/summarize-website
+    name: summarize-website
+  - url: https://github.com/rchaser53/skills-playground/tree/main/publish/commit-staged-changes
+    name: commit-staged-changes
