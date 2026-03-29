@@ -14,6 +14,7 @@ YAML ファイルに並べた Git リポジトリ URL から、Codex skill を `
 - `outputDir` でインストール先ディレクトリを指定できる
 - 各 target の `name` でインストール先ディレクトリ名を指定できる
 - GitHub URL と一般的な Git リポジトリ URL に対応する
+- GitHub の tree URL で指定したディレクトリ配下をそのままコピーできる
 - 対象リポジトリ内の `SKILL.md` を検出して `.codex/skills` に配置する
 
 ## 前提条件
@@ -28,7 +29,7 @@ YAML ファイルに並べた Git リポジトリ URL から、Codex skill を `
 ```yaml
 outputDir: ./.codex/skills
 targets:
-  - url: https://github.com/rchaser53/summarize-website
+  - url: https://github.com/rchaser53/skills-playground/tree/main/publish/summarize-website
     name: summarize-website
   - url: git@github.com:org/private-skill.git
     name: my-private-skill
@@ -53,7 +54,7 @@ go run . ./codex-skills.yml ./.codex/skills
 ```yaml
 outputDir: ./.codex/skills
 targets:
-  - url: https://github.com/rchaser53/summarize-website
+  - url: https://github.com/rchaser53/skills-playground/tree/main/publish/summarize-website
     name: summarize-website
   - url: git@github.com:org/private-skill.git
     name: my-private-skill
@@ -62,12 +63,13 @@ targets:
 各要素の扱いは次のとおりです。
 
 - `outputDir`: 省略可能。未指定時は `$PWD/.codex/skills`
-- `targets[].url`: インストール元の Git リポジトリ URL
+- `targets[].url`: インストール元の Git リポジトリ URL。GitHub の tree URL を指定した場合はそのディレクトリをコピー
 - `targets[].name`: インストール先ディレクトリ名
 
 ## 対応している URL
 
 - GitHub リポジトリ URL 例: `https://github.com/org/repo`
+- GitHub ディレクトリ URL 例: `https://github.com/org/repo/tree/main/path/to/dir`
 - Git リポジトリ URL 例: `https://github.com/org/repo.git`
 - SSH 形式 例: `git@github.com:org/private-skill.git`
 
@@ -81,9 +83,10 @@ targets:
 
 1. URL 一覧ファイルを読み取る
 2. 各リポジトリを一時ディレクトリに shallow clone する
-3. リポジトリ内の `SKILL.md` を探索する
-4. skill ディレクトリを `.codex/skills/<name>` にコピーする
-5. 同名ディレクトリが既にあれば置き換える
+3. GitHub の tree URL の場合は指定ディレクトリをそのままコピーする
+4. それ以外はリポジトリ内の `SKILL.md` を探索する
+5. skill ディレクトリまたは指定ディレクトリを `.codex/skills/<name>` にコピーする
+6. 同名ディレクトリが既にあれば置き換える
 
 ## 使い方
 

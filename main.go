@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,12 @@ type config struct {
 type target struct {
 	URL  string `yaml:"url"`
 	Name string `yaml:"name"`
+}
+
+type gitSource struct {
+	CloneURL string
+	Ref      string
+	Subdir   string
 }
 
 var (
@@ -56,6 +63,7 @@ func run(args []string) error {
 		fmt.Fprintln(flagSet.Output(), "  - Supported sources:")
 		fmt.Fprintln(flagSet.Output(), "      * Git repository URLs (e.g. https://github.com/org/repo.git)")
 		fmt.Fprintln(flagSet.Output(), "      * GitHub repository URLs (e.g. https://github.com/org/repo)")
+		fmt.Fprintln(flagSet.Output(), "      * GitHub tree URLs (e.g. https://github.com/org/repo/tree/main/path/to/dir)")
 	}
 
 	if err := flagSet.Parse(args); err != nil {
@@ -199,6 +207,9 @@ func looksLikeGitRepoURL(url string) bool {
 	if strings.Contains(url, ".zip") || strings.Contains(url, "SKILL.md") || strings.HasSuffix(url, ".md") {
 		return false
 	}
+	if _, err := parseGitSource(url); err == nil {
+		return true
+	}
 	if strings.HasPrefix(url, "git@") && strings.Contains(url, ":") {
 		return true
 	}
@@ -218,6 +229,11 @@ func looksLikeGitRepoURL(url string) bool {
 }
 
 func installFromGitRepoURL(url string, targetRoot string, aliasName string) error {
+	source, err := parseGitSource(url)
+	if err != nil {
+		return err
+	}
+
 	tmpRoot, err := os.MkdirTemp("", "codex-skill-install-*")
 	if err != nil {
 		return err
@@ -225,11 +241,24 @@ func installFromGitRepoURL(url string, targetRoot string, aliasName string) erro
 	defer os.RemoveAll(tmpRoot)
 
 	repoDir := filepath.Join(tmpRoot, "repo")
-	cloneCmd := exec.Command("git", "clone", "--depth", "1", url, repoDir)
+	cloneArgs := []string{"clone", "--depth", "1"}
+	if source.Ref != "" {
+		cloneArgs = append(cloneArgs, "--branch", source.Ref)
+	}
+	cloneArgs = append(cloneArgs, source.CloneURL, repoDir)
+	cloneCmd := exec.Command("git", cloneArgs...)
 	cloneCmd.Stdout = io.Discard
 	cloneCmd.Stderr = io.Discard
 	if err := cloneCmd.Run(); err != nil {
-		return fmt.Errorf("failed to clone git repository: %s", url)
+		return fmt.Errorf("failed to clone git repository: %s", source.CloneURL)
+	}
+
+	if source.Subdir != "" {
+		sourceDir := filepath.Join(repoDir, filepath.FromSlash(source.Subdir))
+		if _, err := os.Stat(sourceDir); err != nil {
+			return fmt.Errorf("directory not found in git repository: %s", url)
+		}
+		return installDirContentsFromSource(sourceDir, targetRoot, aliasName, false)
 	}
 
 	skillDirs, err := findSkillDirs(repoDir)
@@ -273,14 +302,20 @@ func findSkillDirs(repoDir string) ([]string, error) {
 }
 
 func installDirFromSource(sourceDir string, targetRoot string, aliasName string) error {
+	return installDirContentsFromSource(sourceDir, targetRoot, aliasName, true)
+}
+
+func installDirContentsFromSource(sourceDir string, targetRoot string, aliasName string, requireSkill bool) error {
 	skillName := aliasName
 	if skillName == "" {
 		skillName = filepath.Base(sourceDir)
 	}
 
-	if _, err := os.Stat(filepath.Join(sourceDir, "SKILL.md")); err != nil {
-		fmt.Fprintf(os.Stderr, "Skip: missing SKILL.md in %s\n", sourceDir)
-		return nil
+	if requireSkill {
+		if _, err := os.Stat(filepath.Join(sourceDir, "SKILL.md")); err != nil {
+			fmt.Fprintf(os.Stderr, "Skip: missing SKILL.md in %s\n", sourceDir)
+			return nil
+		}
 	}
 
 	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
@@ -297,6 +332,112 @@ func installDirFromSource(sourceDir string, targetRoot string, aliasName string)
 
 	fmt.Printf("Installed: %s -> %s\n", skillName, destination)
 	return nil
+}
+
+func parseGitSource(rawURL string) (gitSource, error) {
+	if strings.HasPrefix(rawURL, "git@") || strings.HasPrefix(rawURL, "ssh://") {
+		return gitSource{CloneURL: rawURL}, nil
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return gitSource{}, fmt.Errorf("invalid URL: %s", rawURL)
+	}
+
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return gitSource{}, fmt.Errorf("unsupported source (expected git repository URL): %s", rawURL)
+	}
+
+	pathParts := splitURLPath(parsed.Path)
+	if len(pathParts) < 2 {
+		return gitSource{}, fmt.Errorf("unsupported source (expected git repository URL): %s", rawURL)
+	}
+
+	if parsed.Host == "github.com" {
+		return parseGitHubSource(parsed, pathParts)
+	}
+
+	return gitSource{CloneURL: rawURL}, nil
+}
+
+func parseGitHubSource(parsed *url.URL, pathParts []string) (gitSource, error) {
+	if len(pathParts) < 2 {
+		return gitSource{}, fmt.Errorf("unsupported source (expected git repository URL): %s", parsed.String())
+	}
+
+	repoPath := strings.Join(pathParts[:2], "/")
+	cloneURL := parsed.Scheme + "://" + parsed.Host + "/" + repoPath
+	if len(pathParts) == 2 {
+		return gitSource{CloneURL: cloneURL}, nil
+	}
+	if len(pathParts) >= 4 && pathParts[2] == "tree" {
+		refAndSubdir := pathParts[3:]
+		ref, subdir, err := resolveGitHubTreeRef(cloneURL, refAndSubdir)
+		if err != nil {
+			return gitSource{}, err
+		}
+		if subdir == "" {
+			return gitSource{}, fmt.Errorf("directory path is required for tree URL: %s", parsed.String())
+		}
+		return gitSource{CloneURL: cloneURL, Ref: ref, Subdir: subdir}, nil
+	}
+
+	if strings.HasSuffix(repoPath, ".git") {
+		return gitSource{CloneURL: cloneURL}, nil
+	}
+
+	return gitSource{}, fmt.Errorf("unsupported source (expected git repository URL): %s", parsed.String())
+}
+
+func resolveGitHubTreeRef(cloneURL string, refAndSubdir []string) (string, string, error) {
+	if len(refAndSubdir) < 2 {
+		return "", "", fmt.Errorf("directory path is required for tree URL: %s/tree/%s", cloneURL, strings.Join(refAndSubdir, "/"))
+	}
+
+	refs, err := listRemoteRefs(cloneURL)
+	if err != nil {
+		return "", "", err
+	}
+
+	for candidateLength := len(refAndSubdir) - 1; candidateLength >= 1; candidateLength-- {
+		candidateRef := strings.Join(refAndSubdir[:candidateLength], "/")
+		if _, ok := refs[candidateRef]; !ok {
+			continue
+		}
+		return candidateRef, strings.Join(refAndSubdir[candidateLength:], "/"), nil
+	}
+
+	return "", "", fmt.Errorf("failed to resolve branch or tag from tree URL: %s/tree/%s", cloneURL, strings.Join(refAndSubdir, "/"))
+}
+
+func listRemoteRefs(cloneURL string) (map[string]struct{}, error) {
+	cmd := exec.Command("git", "ls-remote", "--heads", "--tags", cloneURL)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect git repository: %s", cloneURL)
+	}
+
+	refs := map[string]struct{}{}
+	for _, line := range strings.Split(string(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		refName := strings.TrimPrefix(fields[1], "refs/heads/")
+		refName = strings.TrimPrefix(refName, "refs/tags/")
+		if refName != fields[1] {
+			refs[refName] = struct{}{}
+		}
+	}
+	return refs, nil
+}
+
+func splitURLPath(path string) []string {
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "/")
 }
 
 func copyDir(source string, destination string) error {
