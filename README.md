@@ -2,6 +2,8 @@
 
 YAML ファイルに並べた Git リポジトリ URL から、Codex skill を `.codex/skills` 配下へまとめてインストールするための Go CLI です。
 
+タグを push すると GitHub Actions が各プラットフォーム向けのバイナリをビルドし、同名タグの GitHub Release に成果物を添付します。
+
 このリポジトリには次のものが含まれます。
 
 - `main.go`: URL 一覧ファイルを読み取り、skill をインストールする CLI 本体
@@ -55,6 +57,26 @@ YAML の `outputDir` より CLI 引数を優先したい場合は第 2 引数に
 ```bash
 go run . ./codex-skills.yml ./.codex/skills
 ```
+
+## リリース
+
+このリポジトリには、タグ push をトリガーに Release を公開する GitHub Actions が含まれています。
+
+例えば次のようにタグを作成して push すると、Release が自動作成されます。
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+添付される成果物は次の形式です。
+
+- `codex-skills-installer_<tag>_linux_amd64.tar.gz`
+- `codex-skills-installer_<tag>_linux_arm64.tar.gz`
+- `codex-skills-installer_<tag>_darwin_amd64.tar.gz`
+- `codex-skills-installer_<tag>_darwin_arm64.tar.gz`
+- `codex-skills-installer_<tag>_windows_amd64.zip`
+- `codex-skills-installer_<tag>_windows_arm64.zip`
 
 ## 入力ファイル形式
 
