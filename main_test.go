@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,5 +66,39 @@ func TestInstallDirContentsFromSourceReplacesExistingDestinationByDefault(t *tes
 	}
 	if string(contents) != "new content" {
 		t.Fatalf("destination was not replaced: got %q", string(contents))
+	}
+}
+
+func TestParseGitSourceRejectsNonRepoArtifacts(t *testing.T) {
+	t.Parallel()
+
+	testCases := []string{
+		"https://example.com/archive.zip",
+		"https://example.com/skills/SKILL.md",
+		"https://example.com/docs/readme.md",
+	}
+
+	for _, rawURL := range testCases {
+		rawURL := rawURL
+		t.Run(rawURL, func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := parseGitSource(context.Background(), rawURL); err == nil {
+				t.Fatalf("parseGitSource(%q) succeeded unexpectedly", rawURL)
+			}
+		})
+	}
+}
+
+func TestParseGitSourceAcceptsSSHCloneURL(t *testing.T) {
+	t.Parallel()
+
+	source, err := parseGitSource(context.Background(), "git@github.com:owner/repo.git")
+	if err != nil {
+		t.Fatalf("parseGitSource returned error: %v", err)
+	}
+
+	if source.CloneURL != "git@github.com:owner/repo.git" {
+		t.Fatalf("unexpected clone URL: %q", source.CloneURL)
 	}
 }
