@@ -22,8 +22,9 @@ type config struct {
 }
 
 type target struct {
-	URL  string `yaml:"url"`
-	Name string `yaml:"name"`
+	URL     string `yaml:"url"`
+	Name    string `yaml:"name"`
+	Version string `yaml:"version"`
 }
 
 type gitSource struct {
@@ -59,7 +60,7 @@ func run(args []string) error {
 		fmt.Fprintln(flagSet.Output())
 		fmt.Fprintln(flagSet.Output(), "URL list format:")
 		fmt.Fprintln(flagSet.Output(), "  - outputDir: string")
-		fmt.Fprintln(flagSet.Output(), "  - targets: array of objects with url and name")
+		fmt.Fprintln(flagSet.Output(), "  - targets: array of objects with url, name, and optional version")
 		fmt.Fprintln(flagSet.Output(), "  - Supported sources:")
 		fmt.Fprintln(flagSet.Output(), "      * Git repository URLs (e.g. https://github.com/org/repo.git)")
 		fmt.Fprintln(flagSet.Output(), "      * GitHub repository URLs (e.g. https://github.com/org/repo)")
@@ -115,7 +116,7 @@ func run(args []string) error {
 			return fmt.Errorf("unsupported source (expected git repository URL): %s", target.URL)
 		}
 
-		if err := installFromGitRepoURL(target.URL, installDir, target.Name); err != nil {
+		if err := installFromGitRepoURL(target.URL, installDir, target.Name, target.Version); err != nil {
 			return err
 		}
 	}
@@ -185,13 +186,17 @@ func normalizeTargets(items []target) ([]target, error) {
 	for index, item := range items {
 		trimmedURL := strings.TrimSpace(item.URL)
 		trimmedName := strings.TrimSpace(item.Name)
+		trimmedVersion := strings.TrimSpace(item.Version)
+		if trimmedVersion == "" {
+			trimmedVersion = "main"
+		}
 		if trimmedURL == "" {
 			return nil, fmt.Errorf("targets[%d].url is required", index)
 		}
 		if trimmedName == "" {
 			return nil, fmt.Errorf("targets[%d].name is required", index)
 		}
-		result = append(result, target{URL: trimmedURL, Name: trimmedName})
+		result = append(result, target{URL: trimmedURL, Name: trimmedName, Version: trimmedVersion})
 	}
 	return result, nil
 }
@@ -228,10 +233,13 @@ func looksLikeGitRepoURL(url string) bool {
 	return genericGitURLPattern.MatchString(url)
 }
 
-func installFromGitRepoURL(url string, targetRoot string, aliasName string) error {
+func installFromGitRepoURL(url string, targetRoot string, aliasName string, version string) error {
 	source, err := parseGitSource(url)
 	if err != nil {
 		return err
+	}
+	if version != "" {
+		source.Ref = version
 	}
 
 	tmpRoot, err := os.MkdirTemp("", "codex-skill-install-*")
@@ -242,7 +250,7 @@ func installFromGitRepoURL(url string, targetRoot string, aliasName string) erro
 
 	repoDir := filepath.Join(tmpRoot, "repo")
 	cloneArgs := []string{"clone", "--depth", "1"}
-	if source.Ref != "" {
+	if source.Ref != "" && !looksLikeCommitHash(source.Ref) {
 		cloneArgs = append(cloneArgs, "--branch", source.Ref)
 	}
 	cloneArgs = append(cloneArgs, source.CloneURL, repoDir)
@@ -251,6 +259,11 @@ func installFromGitRepoURL(url string, targetRoot string, aliasName string) erro
 	cloneCmd.Stderr = io.Discard
 	if err := cloneCmd.Run(); err != nil {
 		return fmt.Errorf("failed to clone git repository: %s", source.CloneURL)
+	}
+	if source.Ref != "" && looksLikeCommitHash(source.Ref) {
+		if err := checkoutCommit(repoDir, source.Ref, source.CloneURL); err != nil {
+			return err
+		}
 	}
 
 	if source.Subdir != "" {
@@ -275,6 +288,29 @@ func installFromGitRepoURL(url string, targetRoot string, aliasName string) erro
 			return err
 		}
 		currentAlias = ""
+	}
+
+	return nil
+}
+
+func looksLikeCommitHash(ref string) bool {
+	matched, _ := regexp.MatchString("^[0-9a-fA-F]{40}$", ref)
+	return matched
+}
+
+func checkoutCommit(repoDir string, commit string, cloneURL string) error {
+	fetchCmd := exec.Command("git", "-C", repoDir, "fetch", "--depth", "1", "origin", commit)
+	fetchCmd.Stdout = io.Discard
+	fetchCmd.Stderr = io.Discard
+	if err := fetchCmd.Run(); err != nil {
+		return fmt.Errorf("failed to fetch commit %s from git repository: %s", commit, cloneURL)
+	}
+
+	checkoutCmd := exec.Command("git", "-C", repoDir, "checkout", "--detach", "FETCH_HEAD")
+	checkoutCmd.Stdout = io.Discard
+	checkoutCmd.Stderr = io.Discard
+	if err := checkoutCmd.Run(); err != nil {
+		return fmt.Errorf("failed to checkout commit %s from git repository: %s", commit, cloneURL)
 	}
 
 	return nil

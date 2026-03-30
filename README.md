@@ -13,6 +13,7 @@ YAML ファイルに並べた Git リポジトリ URL から、Codex skill を `
 - YAML の `targets` 配列から skill リポジトリ URL を読み取る
 - `outputDir` でインストール先ディレクトリを指定できる
 - 各 target の `name` でインストール先ディレクトリ名を指定できる
+- 各 target の `version` で branch、tag、commit hash を指定できる
 - GitHub URL と一般的な Git リポジトリ URL に対応する
 - GitHub の tree URL で指定したディレクトリ配下をそのままコピーできる
 - 対象リポジトリ内の `SKILL.md` を検出して `.codex/skills` に配置する
@@ -31,8 +32,10 @@ outputDir: ./.codex/skills
 targets:
   - url: https://github.com/rchaser53/skills-playground/tree/main/publish/summarize-website
     name: summarize-website
+    version: v1.0.0
   - url: git@github.com:org/private-skill.git
     name: my-private-skill
+    version: 4f3c2b1a9e6d7c8b0a1f2e3d4c5b6a7980fedcba
 ```
 
 次を実行します。
@@ -56,8 +59,10 @@ outputDir: ./.codex/skills
 targets:
   - url: https://github.com/rchaser53/skills-playground/tree/main/publish/summarize-website
     name: summarize-website
+    version: v1.0.0
   - url: git@github.com:org/private-skill.git
     name: my-private-skill
+    version: 4f3c2b1a9e6d7c8b0a1f2e3d4c5b6a7980fedcba
 ```
 
 各要素の扱いは次のとおりです。
@@ -65,6 +70,9 @@ targets:
 - `outputDir`: 省略可能。未指定時は `$PWD/.codex/skills`
 - `targets[].url`: インストール元の Git リポジトリ URL。GitHub の tree URL を指定した場合はそのディレクトリをコピー
 - `targets[].name`: インストール先ディレクトリ名
+- `targets[].version`: 省略可能。branch、tag、または 40 文字の commit hash。未指定時は `main` を取得
+
+`targets[].version` を指定した場合は、URL 側に含まれる branch/tag よりこちらを優先します。未指定時も `main` として扱います。GitHub の tree URL ではディレクトリ部分だけを再利用し、取得する ref は `version` に切り替わります。
 
 ## 対応している URL
 
@@ -83,10 +91,11 @@ targets:
 
 1. URL 一覧ファイルを読み取る
 2. 各リポジトリを一時ディレクトリに shallow clone する
-3. GitHub の tree URL の場合は指定ディレクトリをそのままコピーする
-4. それ以外はリポジトリ内の `SKILL.md` を探索する
-5. skill ディレクトリまたは指定ディレクトリを `.codex/skills/<name>` にコピーする
-6. 同名ディレクトリが既にあれば置き換える
+3. `version` があれば、その branch/tag/commit hash を checkout する
+4. GitHub の tree URL の場合は指定ディレクトリをそのままコピーする
+5. それ以外はリポジトリ内の `SKILL.md` を探索する
+6. skill ディレクトリまたは指定ディレクトリを `.codex/skills/<name>` にコピーする
+7. 同名ディレクトリが既にあれば置き換える
 
 ## 使い方
 
