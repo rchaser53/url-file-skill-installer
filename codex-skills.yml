@@ -5,3 +5,5 @@ targets:
     name: summarize-website
   - url: https://github.com/rchaser53/skills-playground/tree/main/publish/commit-staged-changes
     name: commit-staged-changes
+  - url: https://github.com/samber/cc-skills-golang/tree/main/skills/golang-code-style
+    name: golang-code-style

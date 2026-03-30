@@ -44,6 +44,12 @@ targets:
 go run .
 ```
 
+既存ディレクトリを残したまま未インストールの skill だけ追加したい場合は `--skip-existing` を付けます。
+
+```bash
+go run . --skip-existing
+```
+
 YAML の `outputDir` より CLI 引数を優先したい場合は第 2 引数に渡します。
 
 ```bash
@@ -96,6 +102,7 @@ targets:
 5. それ以外はリポジトリ内の `SKILL.md` を探索する
 6. skill ディレクトリまたは指定ディレクトリを `.codex/skills/<name>` にコピーする
 7. 同名ディレクトリが既にあれば置き換える
+8. `--skip-existing` 指定時は、同名ディレクトリが既にある skill をスキップする
 
 ## 使い方
 
@@ -108,15 +115,17 @@ go run . --help
 引数の仕様:
 
 ```text
-go run . [url_list_file] [install_dir]
+go run . [options] [url_list_file] [install_dir]
 ```
 
+- `--skip-existing`: インストール先に同名ディレクトリが既にある場合は削除せずスキップ
 - `url_list_file`: 省略時は `./codex-skills.yml` を使用し、存在しない場合は `./codex-skils.yml` をフォールバックとして参照
 - `install_dir`: 省略時は YAML の `outputDir` を使用し、さらに未指定なら `$PWD/.codex/skills`
 
 ## 注意点
 
 - インストール先に同名ディレクトリがある場合は削除して再配置します
+- `--skip-existing` を指定した場合は、同名ディレクトリがある skill をそのまま残してスキップします
 - リポジトリ内に `SKILL.md` が見つからない場合はエラーになります
 - private repository を使う場合は、その URL 形式に応じた認証設定が必要です
 

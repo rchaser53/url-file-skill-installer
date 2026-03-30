@@ -33,6 +33,10 @@ type gitSource struct {
 	Subdir   string
 }
 
+type installOptions struct {
+	skipExisting bool
+}
+
 var (
 	githubRepoURLPattern    = regexp.MustCompile(`^https?://github\.com/[^/]+/[^/]+/?(\.git)?$`)
 	gitlabRepoURLPattern    = regexp.MustCompile(`^https?://gitlab\.com/[^/]+/[^/]+/?(\.git)?$`)
@@ -50,9 +54,13 @@ func main() {
 func run(args []string) error {
 	flagSet := flag.NewFlagSet("codex-skills-installer", flag.ContinueOnError)
 	flagSet.SetOutput(os.Stdout)
+	skipExisting := flagSet.Bool("skip-existing", false, "Skip installing a skill when the destination already exists")
 	flagSet.Usage = func() {
 		fmt.Fprintln(flagSet.Output(), "Usage:")
-		fmt.Fprintln(flagSet.Output(), "  go run . [url_list_file] [install_dir]")
+		fmt.Fprintln(flagSet.Output(), "  go run . [options] [url_list_file] [install_dir]")
+		fmt.Fprintln(flagSet.Output())
+		fmt.Fprintln(flagSet.Output(), "Options:")
+		fmt.Fprintln(flagSet.Output(), "  --skip-existing  Skip installing a skill when the destination already exists")
 		fmt.Fprintln(flagSet.Output())
 		fmt.Fprintln(flagSet.Output(), "Arguments:")
 		fmt.Fprintln(flagSet.Output(), "  url_list_file  Optional. Defaults to ./codex-skills.yml (fallback: ./codex-skils.yml)")
@@ -110,13 +118,15 @@ func run(args []string) error {
 		return err
 	}
 
+	options := installOptions{skipExisting: *skipExisting}
+
 	for index, target := range targets {
 		fmt.Printf("[%d] Processing: %s\n", index+1, target.URL)
 		if !looksLikeGitRepoURL(target.URL) {
 			return fmt.Errorf("unsupported source (expected git repository URL): %s", target.URL)
 		}
 
-		if err := installFromGitRepoURL(target.URL, installDir, target.Name, target.Version); err != nil {
+		if err := installFromGitRepoURL(target.URL, installDir, target.Name, target.Version, options); err != nil {
 			return err
 		}
 	}
@@ -233,7 +243,7 @@ func looksLikeGitRepoURL(url string) bool {
 	return genericGitURLPattern.MatchString(url)
 }
 
-func installFromGitRepoURL(url string, targetRoot string, aliasName string, version string) error {
+func installFromGitRepoURL(url string, targetRoot string, aliasName string, version string, options installOptions) error {
 	source, err := parseGitSource(url)
 	if err != nil {
 		return err
@@ -271,7 +281,7 @@ func installFromGitRepoURL(url string, targetRoot string, aliasName string, vers
 		if _, err := os.Stat(sourceDir); err != nil {
 			return fmt.Errorf("directory not found in git repository: %s", url)
 		}
-		return installDirContentsFromSource(sourceDir, targetRoot, aliasName, false)
+		return installDirContentsFromSource(sourceDir, targetRoot, aliasName, false, options)
 	}
 
 	skillDirs, err := findSkillDirs(repoDir)
@@ -284,7 +294,7 @@ func installFromGitRepoURL(url string, targetRoot string, aliasName string, vers
 
 	currentAlias := aliasName
 	for _, skillDir := range skillDirs {
-		if err := installDirFromSource(skillDir, targetRoot, currentAlias); err != nil {
+		if err := installDirFromSource(skillDir, targetRoot, currentAlias, options); err != nil {
 			return err
 		}
 		currentAlias = ""
@@ -337,11 +347,11 @@ func findSkillDirs(repoDir string) ([]string, error) {
 	return skillDirs, nil
 }
 
-func installDirFromSource(sourceDir string, targetRoot string, aliasName string) error {
-	return installDirContentsFromSource(sourceDir, targetRoot, aliasName, true)
+func installDirFromSource(sourceDir string, targetRoot string, aliasName string, options installOptions) error {
+	return installDirContentsFromSource(sourceDir, targetRoot, aliasName, true, options)
 }
 
-func installDirContentsFromSource(sourceDir string, targetRoot string, aliasName string, requireSkill bool) error {
+func installDirContentsFromSource(sourceDir string, targetRoot string, aliasName string, requireSkill bool, options installOptions) error {
 	skillName := aliasName
 	if skillName == "" {
 		skillName = filepath.Base(sourceDir)
@@ -359,6 +369,15 @@ func installDirContentsFromSource(sourceDir string, targetRoot string, aliasName
 	}
 
 	destination := filepath.Join(targetRoot, skillName)
+	if options.skipExisting {
+		if _, err := os.Stat(destination); err == nil {
+			fmt.Printf("Skipped existing: %s\n", destination)
+			return nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+
 	if err := os.RemoveAll(destination); err != nil {
 		return err
 	}
