@@ -60,7 +60,7 @@ go run . ./codex-skills.yml ./.codex/skills
 
 ## リリース
 
-このリポジトリには、タグ push をトリガーに Release を公開する GitHub Actions が含まれています。
+このリポジトリには、タグ push をトリガーに test と lint を実行し、その後に Release を公開する GitHub Actions が含まれています。
 
 例えば次のようにタグを作成して push すると、Release が自動作成されます。
 
