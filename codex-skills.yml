@@ -7,3 +7,9 @@ targets:
     name: commit-staged-changes
   - url: https://github.com/samber/cc-skills-golang/tree/main/skills/golang-code-style
     name: golang-code-style
+  - url: https://github.com/samber/cc-skills-golang/tree/main/skills/golang-error-handling
+    name: golang-error-handling
+  - url: https://github.com/samber/cc-skills-golang/tree/main/skills/golang-context
+    name: golang-context
+  - url: https://github.com/samber/cc-skills-golang/tree/main/skills/golang-testing
+    name: golang-testing
